@@ -957,6 +957,16 @@ textarea:focus {
   color: var(--accent-red);
 }
 
+.badge-pass {
+  background: rgba(158, 206, 106, 0.2);
+  color: var(--accent-green);
+}
+
+.badge-fail {
+  background: rgba(247, 118, 142, 0.2);
+  color: var(--accent-red);
+}
+
 /* Modal */
 .modal {
   background: var(--bg-secondary);
@@ -1065,4 +1075,84 @@ textarea:focus {
     min-width: 260px;
     max-width: 260px;
   }
+}
+
+/* Evidence filters */
+.evidence-filters,
+.validation-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.evidence-filters label,
+.validation-filters label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--fg-secondary);
+}
+
+.evidence-filters select,
+.validation-filters select {
+  min-width: 140px;
+}
+
+/* Evidence modal */
+.evidence-modal-field {
+  margin-bottom: 16px;
+}
+
+.evidence-modal-field label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+  letter-spacing: 0.05em;
+}
+
+.evidence-modal-field > div {
+  font-size: 0.9rem;
+  color: var(--fg-primary);
+}
+
+.evidence-modal-field pre {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow: auto;
+  max-height: 500px;
+  white-space: pre-wrap;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.evidence-modal-field img {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: var(--radius);
+}
+
+.loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--accent-red);
+  padding: 16px;
+  background: rgba(247, 118, 142, 0.1);
+  border: 1px solid var(--accent-red);
+  border-radius: var(--radius);
 }

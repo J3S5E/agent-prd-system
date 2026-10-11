@@ -71,6 +71,15 @@ const unblockModal = document.getElementById(
 const unblockMessage = document.getElementById(
   "unblock-message",
 ) as HTMLParagraphElement;
+const evidenceModal = document.getElementById(
+  "evidence-modal",
+) as HTMLDialogElement;
+const evidenceModalTitle = document.getElementById(
+  "evidence-modal-title",
+) as HTMLHeadingElement;
+const evidenceModalContent = document.getElementById(
+  "evidence-modal-content",
+) as HTMLDivElement;
 
 // Initialize
 document.addEventListener("DOMContentLoaded", async () => {
@@ -992,15 +1001,37 @@ function renderEvidenceTab(ticket: Ticket): string {
     return '<div class="empty-state"><p>No evidence</p></div>';
   }
 
+  const sources = [...new Set(evidence.map(e => e.source))];
+  const hasValidation = sources.includes('validation');
+
   return `
-    <div class="detail-list">
+    <div class="evidence-filters">
+      <label>Source:
+        <select id="evidence-source-filter">
+          <option value="">All</option>
+          ${sources.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')}
+        </select>
+      </label>
+      ${hasValidation ? `
+        <label>Validation:
+        <select id="evidence-passed-filter">
+          <option value="">All</option>
+          <option value="true">Passed</option>
+          <option value="false">Failed</option>
+        </select>
+      </label>` : ''}
+    </div>
+    <div class="detail-list" id="evidence-list">
       ${evidence
         .map(
           (e: Evidence) => `
-        <div class="detail-list-item">
+        <div class="detail-list-item" data-source="${escapeHtml(e.source)}" data-passed="${e.passed !== undefined ? String(e.passed) : ''}">
           <div class="detail-list-item-header">
-            <span class="detail-list-item-title">${escapeHtml(e.filePath)}</span>
+            <span class="detail-list-item-title">${escapeHtml(e.filePath || 'inline')}</span>
             <span class="detail-list-item-source">${escapeHtml(e.source)} / ${escapeHtml(e.type)}</span>
+            ${e.passed !== undefined ? `
+              <span class="badge badge-${e.passed ? 'pass' : 'fail'}">${e.passed ? 'PASS' : 'FAIL'}</span>
+            ` : ''}
           </div>
           <div class="detail-list-item-desc">${escapeHtml(e.contentType)}</div>
         </div>
@@ -1008,6 +1039,26 @@ function renderEvidenceTab(ticket: Ticket): string {
         )
         .join("")}
     </div>
+    <script>
+      (function() {
+        const sourceFilter = document.getElementById('evidence-source-filter');
+        const passedFilter = document.getElementById('evidence-passed-filter');
+        const list = document.getElementById('evidence-list');
+        if (!list) return;
+        const items = list.querySelectorAll('.detail-list-item');
+        function filter() {
+          const src = sourceFilter?.value || '';
+          const p = passedFilter?.value || '';
+          items.forEach(item => {
+            const matchSrc = !src || item.dataset.source === src;
+            const matchPassed = !p || item.dataset.passed === p;
+            item.style.display = (matchSrc && matchPassed) ? '' : 'none';
+          });
+        }
+        sourceFilter?.addEventListener('change', filter);
+        passedFilter?.addEventListener('change', filter);
+      })();
+    </script>
   `;
 }
 
@@ -1088,12 +1139,25 @@ function renderSubtasksTab(ticket: Ticket): string {
 
 function renderValidationTab(ticket: Ticket): string {
   const runs = (ticket.validationRuns || []) as ValidationRunWithDuration[];
+  const evidence = ticket.evidence || [];
 
   if (runs.length === 0) {
     return '<div class="empty-state"><p>No validation runs</p></div>';
   }
 
+  // Map evidenceId to evidence for quick lookup
+  const evidenceById = new Map(evidence.map(e => [e.id, e]));
+
   return `
+    <div class="validation-filters">
+      <label>Show:
+        <select id="validation-result-filter">
+          <option value="">All</option>
+          <option value="true">Passed</option>
+          <option value="false">Failed</option>
+        </select>
+      </label>
+    </div>
     <table class="validation-table">
       <thead>
         <tr>
@@ -1102,24 +1166,45 @@ function renderValidationTab(ticket: Ticket): string {
           <th>Exit Code</th>
           <th>Duration</th>
           <th>Time</th>
+          <th>Evidence</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody id="validation-rows">
         ${runs
           .map(
-            (r: ValidationRunWithDuration) => `
-          <tr>
+            (r: ValidationRunWithDuration) => {
+              const ev = r.evidenceId ? evidenceById.get(r.evidenceId) : null;
+              return `
+          <tr data-passed="${r.passed ? 'true' : 'false'}">
             <td>${escapeHtml(r.checkName)}</td>
             <td class="${r.passed ? "pass" : "fail"}">${r.passed ? "PASS" : "FAIL"}</td>
             <td>${r.exitCode}</td>
             <td>${r.durationMs ? r.durationMs + "ms" : "—"}</td>
             <td>${formatDate(r.createdAt)}</td>
+            <td>
+              ${ev ? `
+                <button class="btn btn-sm" onclick="showEvidenceModal('${escapeHtml(ev.id)}')">View</button>
+                ${ev.passed !== undefined ? `<span class="badge badge-${ev.passed ? 'pass' : 'fail'}">${ev.passed ? 'PASS' : 'FAIL'}</span>` : ''}
+              ` : '—'}
+            </td>
           </tr>
-        `,
-          )
+        `;
+            })
           .join("")}
       </tbody>
     </table>
+    <script>
+      (function() {
+        const filter = document.getElementById('validation-result-filter');
+        const rows = document.querySelectorAll('#validation-rows tr');
+        filter?.addEventListener('change', () => {
+          const val = filter.value;
+          rows.forEach(row => {
+            row.style.display = (!val || row.dataset.passed === val) ? '' : 'none';
+          });
+        });
+      })();
+    </script>
   `;
 }
 
@@ -1150,6 +1235,55 @@ unblockModal.addEventListener("close", async () => {
       alert("Failed to unblock ticket: " + (err as Error).message);
     }
   }
+});
+
+// Evidence Modal
+async function showEvidenceModal(evidenceId: string): Promise<void> {
+  evidenceModalTitle.textContent = "Loading...";
+  evidenceModalContent.innerHTML = '<div class="loading">Loading evidence...</div>';
+  evidenceModal.showModal();
+
+  try {
+    const evidence = await apiGet<Evidence>(`/evidence/${evidenceId}`);
+    evidenceModalTitle.textContent = evidence.filePath || 'Inline Evidence';
+    
+    const passedBadge = evidence.passed !== undefined 
+      ? `<span class="badge badge-${evidence.passed ? 'pass' : 'fail'}">${evidence.passed ? 'PASS' : 'FAIL'}</span>`
+      : '';
+    
+    const contentDisplay = evidence.contentType?.startsWith('image/')
+      ? `<img src="/api/v1/evidence/${evidence.id}" alt="Evidence" style="max-width: 100%; max-height: 500px;">`
+      : `<pre style="white-space: pre-wrap; max-height: 500px; overflow: auto;">${escapeHtml(evidence.content || '')}</pre>`;
+    
+    evidenceModalContent.innerHTML = `
+      <div class="evidence-modal-field">
+        <label>Source</label>
+        <div>${escapeHtml(evidence.source)}</div>
+      </div>
+      <div class="evidence-modal-field">
+        <label>Type</label>
+        <div>${escapeHtml(evidence.type)} ${passedBadge}</div>
+      </div>
+      <div class="evidence-modal-field">
+        <label>Content Type</label>
+        <div>${escapeHtml(evidence.contentType)}</div>
+      </div>
+      <div class="evidence-modal-field">
+        <label>Created</label>
+        <div>${formatDate(evidence.createdAt)}</div>
+      </div>
+      <div class="evidence-modal-field">
+        <label>Content</label>
+        <div>${contentDisplay}</div>
+      </div>
+    `;
+  } catch (err) {
+    evidenceModalContent.innerHTML = `<div class="error">Failed to load evidence: ${(err as Error).message}</div>`;
+  }
+}
+
+evidenceModal.addEventListener("close", () => {
+  evidenceModalContent.innerHTML = "";
 });
 
 // Utilities

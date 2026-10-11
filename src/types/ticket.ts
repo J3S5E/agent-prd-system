@@ -63,6 +63,8 @@ export const CreateTicketSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   targetBranch: z.string().optional(),
+  jiraTicket: z.string().optional(),
+  priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional().default('P2'),
 });
 
 export const UpdateTicketSchema = z.object({
@@ -77,6 +79,8 @@ export const UpdateTicketSchema = z.object({
   featureBranch: z.string().optional(),
   worktreeDir: z.string().optional(),
   targetBranch: z.string().optional(),
+  jiraTicket: z.string().optional(),
+  priority: z.enum(['P0', 'P1', 'P2', 'P3']).optional(),
 });
 
 export const UpdateTicketStatusSchema = z.object({

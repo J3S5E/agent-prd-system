@@ -209,12 +209,13 @@ async function findTicketsNeedingProcessing() {
 }
 
 async function getValidationConfig(ticket) {
-  const url = `${PRD_SERVER_URL}/api/v1/repos/${encodeURIComponent(REPO_NAME)}/validate`;
-  return fetchWithRetry(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticketId: ticket.id }),
-  });
+  const url = `${PRD_SERVER_URL}/api/v1/repos/${encodeURIComponent(REPO_NAME)}/validation-checks`;
+  const res = await fetchWithRetry(url);
+  // Response is { checks: ValidationCheck[] }
+  // We need to return { runId, config } format for backward compatibility with processTicket
+  const runId = crypto.randomUUID();
+  const config = { checks: res.checks, worktreeBase: ".", maxConcurrent: 1 };
+  return { runId, config };
 }
 
 async function uploadEvidence(ticketId, evidence) {
@@ -253,6 +254,7 @@ async function runValidationLocally(ticket, config) {
         source: "validation",
         type: "build_output",
         content: stdout + stderr,
+        passed: exitCode === 0,
       });
 
       results.push({
@@ -270,6 +272,7 @@ async function runValidationLocally(ticket, config) {
         source: "validation",
         type: "build_output",
         content: `Error: ${err.message}`,
+        passed: false,
       });
 
       results.push({

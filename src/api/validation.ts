@@ -3,7 +3,7 @@ import { eq, desc, count } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
-import { tickets, repos, validationRuns, idempotencyKeys } from '../db/schema.js';
+import { tickets, repos, validationRuns } from '../db/schema.js';
 import { ValidationConfigSchema, GetValidationConfigSchema, SubmitValidationResultsSchema, ValidationConfig } from '../types/validation.js';
 import { broadcast } from '../engine/events.js';
 import { incrementValidationAttempts, checkValidationCircuitBreaker, getCircuitBreakerState } from '../engine/circuits.js';
@@ -13,11 +13,6 @@ import { trackInFlight } from './inflight.js';
 
 const router = Router();
 
-function getHeader(headers: Record<string, string | string[] | undefined>, key: string): string | undefined {
-  const val = headers[key.toLowerCase()];
-  return Array.isArray(val) ? val[0] : val;
-}
-
 function parseTicketStatusFromDb(status: string): TicketStatus {
   const parsed = TicketStatusEnum.safeParse(status);
   if (!parsed.success) {
@@ -25,107 +20,6 @@ function parseTicketStatusFromDb(status: string): TicketStatus {
   }
   return parsed.data;
 }
-
-const IdempotencyKeySchema = z.string().min(1).max(64);
-
-router.post('/:repo/validate', async (req: Request, res: Response) => {
-  const release = trackInFlight();
-  try {
-    const parse = GetValidationConfigSchema.safeParse(req.body);
-    if (!parse.success) {
-      return res.status(400).json({ error: 'Validation failed', issues: parse.error.issues });
-    }
-    
-    const { ticketId } = parse.data;
-    const idempotencyKey = getHeader(req.headers, 'idempotency-key');
-    
-    if (idempotencyKey) {
-      const keyParse = IdempotencyKeySchema.safeParse(idempotencyKey);
-      if (!keyParse.success) {
-        return res.status(400).json({ error: 'Invalid Idempotency-Key header' });
-      }
-      
-      // Check idempotency key storage
-      const existingKey = await db.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, idempotencyKey)).limit(1);
-      if (existingKey.length > 0) {
-        const keyRecord = existingKey[0];
-        const now = Date.now();
-        
-        if (keyRecord.expiresAt > now) {
-          // Return cached response
-          return res.json(JSON.parse(keyRecord.response));
-        } else {
-          // Expired, delete it
-          await db.delete(idempotencyKeys).where(eq(idempotencyKeys.key, idempotencyKey));
-        }
-      }
-    }
-    
-    // Get ticket
-    const ticket = await db.select().from(tickets).where(eq(tickets.id, ticketId)).limit(1);
-    if (ticket.length === 0) {
-      return res.status(404).json({ error: 'Ticket not found' });
-    }
-    
-    // Get repo config
-    const repoConfig = await db.select().from(repos).where(eq(repos.name, req.params.repo)).limit(1);
-    if (repoConfig.length === 0) {
-      return res.status(404).json({ error: 'Repo not found' });
-    }
-    
-    const defaultWorktreeBase = process.env.PRD_WORKTREE_BASE || '.';
-    let validationConfig: ValidationConfig = { worktreeBase: defaultWorktreeBase, checks: [], maxConcurrent: 2 };
-    if (repoConfig[0].validationConfig) {
-      try {
-        const validated = ValidationConfigSchema.safeParse(JSON.parse(repoConfig[0].validationConfig));
-        if (validated.success) {
-          validationConfig = validated.data;
-        }
-      } catch {
-        // Invalid config, use defaults
-      }
-    }
-    
-    const runId = crypto.randomUUID();
-    
-    // Update ticket status to NEEDS_VALIDATION if it's not already
-    if (ticket[0].status !== 'NEEDS_VALIDATION') {
-      await db.update(tickets).set({ status: 'NEEDS_VALIDATION', updatedAt: Date.now() }).where(eq(tickets.id, ticketId));
-      broadcast({ type: 'ticket:status_changed', ticketId, from: parseTicketStatusFromDb(ticket[0].status), to: 'NEEDS_VALIDATION' });
-    }
-    
-    broadcast({ type: 'validation:started', ticketId, checkCount: validationConfig.checks.length });
-    
-    const response = {
-      runId,
-      config: validationConfig,
-      ticket: {
-        id: ticket[0].id,
-        worktreeDir: ticket[0].worktreeDir,
-        repo: ticket[0].repo,
-        targetBranch: ticket[0].targetBranch,
-        featureBranch: ticket[0].featureBranch,
-      },
-    };
-    
-    // Store idempotency key if provided
-    if (idempotencyKey) {
-      const now = Date.now();
-      const expiresAt = now + 24 * 60 * 60 * 1000; // 24 hours
-      
-      await db.insert(idempotencyKeys).values({
-        key: idempotencyKey,
-        response: JSON.stringify(response),
-        createdAt: now,
-        expiresAt,
-      });
-    }
-    
-    res.json(response);
-  } finally {
-    release();
-  }
-});
 
 router.get('/tickets/:id/validation-runs', async (req: Request, res: Response) => {
   const query = req.query;
@@ -194,7 +88,7 @@ router.post('/tickets/:id/validation-runs/:runId/rerun', async (req: Request, re
     }
     
     const defaultWorktreeBase = process.env.PRD_WORKTREE_BASE || '.';
-    let validationConfig: ValidationConfig = { worktreeBase: defaultWorktreeBase, checks: [], maxConcurrent: 2 };
+    let validationConfig: ValidationConfig = { worktreeBase: defaultWorktreeBase, checks: [], maxConcurrent: 1 };
     if (repoConfig[0].validationConfig) {
       try {
         const validated = ValidationConfigSchema.safeParse(JSON.parse(repoConfig[0].validationConfig));
@@ -255,6 +149,7 @@ router.post('/tickets/:id/validation-results', async (req: Request, res: Respons
         stderr: result.stderr,
         exitCode: result.exitCode,
         passed: result.passed,
+        evidenceId: result.evidenceId,
         createdAt: now,
       });
     }

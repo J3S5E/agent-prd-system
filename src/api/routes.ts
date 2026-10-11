@@ -19,7 +19,6 @@ router.use('/repos', reposRouter);
 router.use('/tickets', evidenceRouter);
 router.use('/tickets', suggestionsRouter);
 router.use('/tickets', deviationsRouter);
-router.use('/repos', validationRouter);
 router.use('/tickets', validationRouter);
 router.use('/tickets', ticketsRouter);
 router.use('/ralph', ralphRouter);

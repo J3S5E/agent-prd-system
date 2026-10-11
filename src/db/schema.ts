@@ -21,6 +21,8 @@ export const tickets = sqliteTable('tickets', {
   validationAttempts: integer('validation_attempts').default(0),
   planIteration: integer('plan_iteration').default(0),
   parentTicketId: text('parent_ticket_id').references((): AnySQLiteColumn => tickets.id, { onDelete: 'cascade' }),
+  jiraTicket: text('jira_ticket'),
+  priority: text('priority').default('P2'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (table) => ({
@@ -44,10 +46,12 @@ export const evidence = sqliteTable('evidence', {
   contentType: text('content_type').notNull(),
   source: text('source').notNull(),
   type: text('type').notNull(),
+  passed: integer('passed', { mode: 'boolean' }),
   createdAt: integer('created_at').notNull(),
 }, (table) => ({
   ticketIdx: index('idx_evidence_ticket').on(table.ticketId),
   subtaskIdx: index('idx_evidence_subtask').on(table.subtaskId),
+  sourcePassedIdx: index('idx_evidence_source_passed').on(table.source, table.passed),
   // CHECK (ticket_id IS NOT NULL) != (subtask_id IS NOT NULL) -- exactly one parent
   oneParentCheck: check('evidence_one_parent', 
     sql`(ticket_id IS NOT NULL) != (subtask_id IS NOT NULL)`
@@ -90,6 +94,7 @@ export const validationRuns = sqliteTable('validation_runs', {
   stderr: text('stderr'),
   exitCode: integer('exit_code'),
   passed: integer('passed', { mode: 'boolean' }).notNull(),
+  evidenceId: text('evidence_id'),
   createdAt: integer('created_at').notNull(),
 }, (table) => ({
   ticketIdx: index('idx_validation_runs_ticket').on(table.ticketId),
@@ -118,16 +123,6 @@ export const apiLogs = sqliteTable('api_logs', {
   ticketIdx: index('idx_api_logs_ticket').on(table.ticketId),
   createdIdx: index('idx_api_logs_created').on(table.createdAt),
   eventTypeIdx: index('idx_api_logs_event_type').on(table.eventType),
-}));
-
-// idempotency_keys - for idempotent API requests
-export const idempotencyKeys = sqliteTable('idempotency_keys', {
-  key: text('key').primaryKey(),
-  response: text('response').notNull(),
-  createdAt: integer('created_at').notNull(),
-  expiresAt: integer('expires_at').notNull(),
-}, (table) => ({
-  expiresIdx: index('idx_idempotency_keys_expires').on(table.expiresAt),
 }));
 
 // ralph_instances - registered ralph daemon instances
@@ -169,9 +164,6 @@ export type ValidationRun = typeof validationRuns.$inferSelect;
 export type NewValidationRun = typeof validationRuns.$inferInsert;
 export type Repo = typeof repos.$inferSelect;
 export type NewRepo = typeof repos.$inferInsert;
-export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
-export type NewIdempotencyKey = typeof idempotencyKeys.$inferInsert;
-
 export type RalphInstance = typeof ralphInstances.$inferSelect;
 export type NewRalphInstance = typeof ralphInstances.$inferInsert;
 

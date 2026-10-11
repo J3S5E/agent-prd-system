@@ -10,7 +10,7 @@ export const ValidationCheckSchema = z.object({
 export const ValidationConfigSchema = z.object({
   worktreeBase: z.string().default('.'),
   checks: z.array(ValidationCheckSchema).min(1),
-  maxConcurrent: z.number().int().positive().optional().default(2),
+  maxConcurrent: z.number().int().positive().optional().default(1),
 });
 
 export const ValidationRunResultSchema = z.object({

@@ -142,7 +142,7 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Validation failed', issues: parse.error.issues });
   }
   
-  const { repo, name, description, targetBranch } = parse.data;
+  const { repo, name, description, targetBranch, jiraTicket, priority } = parse.data;
   
   const existingRepo = await db.select().from(repos).where(eq(repos.name, repo)).limit(1);
   if (existingRepo.length === 0) {
@@ -164,6 +164,8 @@ router.post('/', async (req: Request, res: Response) => {
     description,
     status: 'NEEDS_REFINEMENT',
     targetBranch,
+    jiraTicket,
+    priority: priority || 'P2',
     createdAt: now,
     updatedAt: now,
   });

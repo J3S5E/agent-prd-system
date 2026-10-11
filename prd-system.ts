@@ -67,14 +67,13 @@ export const create = tool({
       .min(25)
       .max(2000)
       .describe("Description of the ticket"),
-    id: tool.schema.string().optional().describe("Ticket ID (optional)"),
     targetBranch: tool.schema
       .string()
       .min(1)
       .max(100)
       .describe("Target branch for PR"),
     priority: tool.schema
-      .string()
+      .enum(['P0', 'P1', 'P2', 'P3'])
       .optional()
       .describe("Priority: P0, P1, P2, or P3 (defaults to P2)"),
   },
@@ -82,14 +81,13 @@ export const create = tool({
     gitRepo,
     name,
     description,
-    id,
     targetBranch,
-    priority,
     jiraTicket,
+    priority,
   }) {
     const data = await fetchApiWithRetry("/tickets", {
       method: "POST",
-      body: JSON.stringify({ repo: gitRepo, name, description, targetBranch }),
+      body: JSON.stringify({ repo: gitRepo, name, description, targetBranch, jiraTicket, priority }),
     });
     return `Ticket created with ID - ${data.id}`;
   },
@@ -170,11 +168,10 @@ export const submitPR = tool({
   description: "Submits a PR for a ticket.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     prUrl: tool.schema.string().optional().describe("PR URL"),
   },
-  async execute({ id, gitRepo, prUrl, subtaskId }) {
+  async execute({ id, prUrl, subtaskId }) {
     const data = await fetchApiWithRetry(`/tickets/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ newStatus: "NEEDS_PR_MAINTENANCE" }),
@@ -193,7 +190,6 @@ export const flagPrRework = tool({
   description: "Flags a PR for rework.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     rejectionType: tool.schema
       .string()
@@ -201,7 +197,7 @@ export const flagPrRework = tool({
       .describe("'implementation' or 'approach'"),
     rejectionNotes: tool.schema.string().describe("Why rework is needed"),
   },
-  async execute({ id, gitRepo, rejectionType, rejectionNotes, subtaskId }) {
+  async execute({ id, rejectionType, rejectionNotes, subtaskId }) {
     const newStatus =
       rejectionType === "approach"
         ? "NEEDS_REAPPROACH"
@@ -218,13 +214,12 @@ export const requestHumanMerge = tool({
   description: "Requests human merge for a PR.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     ciResults: tool.schema
       .array(tool.schema.string())
       .describe("CI check results"),
   },
-  async execute({ id, gitRepo, ciResults, subtaskId }) {
+  async execute({ id, ciResults, subtaskId }) {
     await fetchApiWithRetry(`/tickets/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ newStatus: "AWAITING_HUMAN_MERGE" }),
@@ -237,10 +232,9 @@ export const completeGitMerge = tool({
   description: "Completes git merge for a subtask.",
   args: {
     id: tool.schema.string().describe("Parent ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     await fetchApiWithRetry(`/tickets/${subtaskId}/status`, {
       method: "PATCH",
       body: JSON.stringify({ newStatus: "NEEDS_FINALIZING" }),
@@ -253,10 +247,9 @@ export const updateName = tool({
   description: "Updates ticket name.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     name: tool.schema.string().min(5).max(250).describe("New name"),
   },
-  async execute({ id, gitRepo, name }) {
+  async execute({ id, name }) {
     await fetchApiWithRetry(`/tickets/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ name }),
@@ -269,14 +262,13 @@ export const updateDescription = tool({
   description: "Updates ticket description.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     description: tool.schema
       .string()
       .min(5)
       .max(2000)
       .describe("New description"),
   },
-  async execute({ id, gitRepo, description }) {
+  async execute({ id, description }) {
     await fetchApiWithRetry(`/tickets/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ description }),
@@ -289,11 +281,14 @@ export const updatePriority = tool({
   description: "Updates ticket priority.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
-    priority: tool.schema.string().describe("Priority: P0, P1, P2, P3"),
+    priority: tool.schema.enum(['P0', 'P1', 'P2', 'P3']).describe("Priority: P0, P1, P2, P3"),
   },
-  async execute({ id, gitRepo, priority }) {
-    return `Priority for ${id} updated to ${priority}. (Note: priority not stored in API yet)`;
+  async execute({ id, priority }) {
+    await fetchApiWithRetry(`/tickets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ priority }),
+    });
+    return `Priority for ${id} updated to ${priority}.`;
   },
 });
 
@@ -301,7 +296,6 @@ export const createSubtask = tool({
   description: "Creates a subtask.",
   args: {
     id: tool.schema.string().describe("Parent ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     name: tool.schema.string().min(5).max(250).describe("Subtask name"),
     description: tool.schema
       .string()
@@ -309,7 +303,7 @@ export const createSubtask = tool({
       .max(2000)
       .describe("Subtask description"),
   },
-  async execute({ id, gitRepo, name, description }) {
+  async execute({ id, name, description }) {
     const data = await fetchApiWithRetry(`/tickets/${id}/subtasks`, {
       method: "POST",
       body: JSON.stringify({ name, description }),
@@ -322,10 +316,9 @@ export const deleteSubtask = tool({
   description: "Deletes a subtask.",
   args: {
     id: tool.schema.string().describe("Parent ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     await fetchApiWithRetry(`/tickets/${subtaskId}`, { method: "DELETE" });
     return `Subtask ${subtaskId} deleted from ticket ${id}.`;
   },
@@ -335,7 +328,6 @@ export const assignWorkspace = tool({
   description: "Assigns feature branch and worktree directory.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     featureBranch: tool.schema
       .string()
@@ -348,7 +340,7 @@ export const assignWorkspace = tool({
       .max(500)
       .describe("Worktree directory path"),
   },
-  async execute({ id, gitRepo, subtaskId, featureBranch, worktreeDir }) {
+  async execute({ id, subtaskId, featureBranch, worktreeDir }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}`, {
       method: "PATCH",
@@ -364,7 +356,6 @@ export const refineTicket = tool({
   args: {
     id: tool.schema.string().describe("Ticket ID"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     acceptanceCriterias: tool.schema
       .array(tool.schema.string())
       .min(1)
@@ -379,7 +370,6 @@ export const refineTicket = tool({
   },
   async execute({
     id,
-    gitRepo,
     acceptanceCriterias,
     estimation,
     techNotes,
@@ -404,9 +394,8 @@ export const finalizeRefinement = tool({
   description: "Finalizes ticket refinement.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
   },
-  async execute({ id, gitRepo }) {
+  async execute({ id }) {
     await fetchApiWithRetry(`/tickets/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ newStatus: "NEEDS_PLAN" }),
@@ -419,11 +408,10 @@ export const savePlan = tool({
   description: "Saves implementation plan.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     plan: tool.schema.string().min(10).describe("Markdown plan"),
   },
-  async execute({ id, gitRepo, plan, subtaskId }) {
+  async execute({ id, plan, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}`, {
       method: "PATCH",
@@ -437,10 +425,9 @@ export const finalizePlanning = tool({
   description: "Finalizes planning, moves to Ready Plan Review.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/status`, {
       method: "PATCH",
@@ -454,7 +441,6 @@ export const addPlanIssues = tool({
   description: "Records plan review issues.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     issues: tool.schema
       .array(tool.schema.string())
@@ -463,7 +449,7 @@ export const addPlanIssues = tool({
       .array(tool.schema.string())
       .describe("Blocking issues"),
   },
-  async execute({ id, gitRepo, issues, blockingIssues, subtaskId }) {
+  async execute({ id, issues, blockingIssues, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}`, {
       method: "PATCH",
@@ -542,11 +528,10 @@ export const completeImplementation = tool({
   description: "Marks implementation complete.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     branch: tool.schema.string().optional().describe("Branch name"),
   },
-  async execute({ id, gitRepo, branch, subtaskId }) {
+  async execute({ id, branch, subtaskId }) {
     const ticketId = subtaskId || id;
     if (branch) {
       await fetchApiWithRetry(`/tickets/${ticketId}`, {
@@ -566,14 +551,13 @@ export const reviewImplementation = tool({
   description: "Reviews implementation.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     passed: tool.schema.boolean().describe("Whether passed"),
     reviewComments: tool.schema
       .array(tool.schema.string())
       .describe("Review comments"),
   },
-  async execute({ id, gitRepo, passed, reviewComments, subtaskId }) {
+  async execute({ id, passed, reviewComments, subtaskId }) {
     const ticketId = subtaskId || id;
     if (!passed && (!reviewComments || reviewComments.length === 0)) {
       return "Review comments required when not passed.";
@@ -633,14 +617,13 @@ export const completeSecurityReview = tool({
   description: "Completes security review.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     passed: tool.schema.boolean().describe("Whether passed"),
     securityNotes: tool.schema
       .array(tool.schema.string())
       .describe("Security notes"),
   },
-  async execute({ id, gitRepo, passed, securityNotes, subtaskId }) {
+  async execute({ id, passed, securityNotes, subtaskId }) {
     const ticketId = subtaskId || id;
     if (!passed && (!securityNotes || securityNotes.length === 0)) {
       return "Security notes required when not passed.";
@@ -665,7 +648,6 @@ export const completePR = tool({
   description: "Confirms PR merged.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     prUrl: tool.schema.string().optional().describe("PR URL"),
     merged: tool.schema
@@ -673,7 +655,7 @@ export const completePR = tool({
       .optional()
       .describe("Whether merged (default true)"),
   },
-  async execute({ id, gitRepo, prUrl, merged, subtaskId }) {
+  async execute({ id, prUrl, merged, subtaskId }) {
     if (merged === false) {
       return "Use flagPrRework instead of completePR with merged=false.";
     }
@@ -696,10 +678,9 @@ export const finalizeReapproach = tool({
   description: "Finalizes reapproach.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/status`, {
       method: "PATCH",
@@ -713,10 +694,9 @@ export const finalizeTicket = tool({
   description: "Finalizes ticket to Needs Cleanup.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/status`, {
       method: "PATCH",
@@ -730,10 +710,9 @@ export const completeCleanup = tool({
   description: "Completes cleanup, marks Done.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, subtaskId }) {
+  async execute({ id, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/status`, {
       method: "PATCH",
@@ -747,11 +726,10 @@ export const blockTicket = tool({
   description: "Blocks a ticket.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     blockedReason: tool.schema.string().describe("Reason for blocking"),
   },
-  async execute({ id, gitRepo, blockedReason, subtaskId }) {
+  async execute({ id, blockedReason, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/status`, {
       method: "PATCH",
@@ -802,7 +780,6 @@ export const addSuggestion = tool({
   description: "Adds out-of-scope suggestion.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     message: tool.schema
       .string()
       .min(10)
@@ -813,7 +790,7 @@ export const addSuggestion = tool({
       .describe("Source: planning, implementation, review, qa, security"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, message, source, subtaskId }) {
+  async execute({ id, message, source, subtaskId }) {
     const ticketId = subtaskId || id;
     await fetchApiWithRetry(`/tickets/${ticketId}/suggestions`, {
       method: "POST",
@@ -827,11 +804,10 @@ export const resolveSuggestion = tool({
   description: "Resolves a suggestion.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     suggestionId: tool.schema.string().describe("Suggestion ID"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, suggestionId, subtaskId }) {
+  async execute({ id, suggestionId, subtaskId }) {
     await fetchApiWithRetry(`/suggestions/${suggestionId}/resolve`, {
       method: "PATCH",
     });
@@ -843,7 +819,6 @@ export const addDeviation = tool({
   description: "Records a plan deviation.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     planItem: tool.schema.string().min(5).max(250).describe("Plan item"),
     action: tool.schema.string().describe("omitted or replaced"),
     reason: tool.schema.string().min(10).max(500).describe("Reason"),
@@ -852,7 +827,7 @@ export const addDeviation = tool({
       .optional()
       .describe("What was done instead"),
   },
-  async execute({ id, gitRepo, planItem, action, reason, replacement }) {
+  async execute({ id, planItem, action, reason, replacement }) {
     await fetchApiWithRetry(`/tickets/${id}/deviations`, {
       method: "POST",
       body: JSON.stringify({
@@ -868,12 +843,11 @@ export const reviewDeviation = tool({
   description: "Reviews a deviation.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     deviationId: tool.schema.string().describe("Deviation ID"),
     accepted: tool.schema.boolean().describe("Accepted"),
     comment: tool.schema.string().optional().describe("Comment"),
   },
-  async execute({ id, gitRepo, deviationId, accepted, comment }) {
+  async execute({ id, deviationId, accepted, comment }) {
     await fetchApiWithRetry(`/deviations/${deviationId}/review`, {
       method: "PATCH",
       body: JSON.stringify({ approved: accepted }),
@@ -886,12 +860,11 @@ export const qaDeviation = tool({
   description: "QA validates a deviation.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     deviationId: tool.schema.string().describe("Deviation ID"),
     validated: tool.schema.boolean().describe("Validated"),
     comment: tool.schema.string().optional().describe("Comment"),
   },
-  async execute({ id, gitRepo, deviationId, validated, comment }) {
+  async execute({ id, deviationId, validated, comment }) {
     await fetchApiWithRetry(`/deviations/${deviationId}/qa`, {
       method: "PATCH",
       body: JSON.stringify({ approved: validated }),
@@ -904,7 +877,6 @@ export const addEvidence = tool({
   description: "Adds evidence from a file.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     description: tool.schema
       .string()
       .min(3)
@@ -923,7 +895,6 @@ export const addEvidence = tool({
   },
   async execute({
     id,
-    gitRepo,
     description,
     type,
     source,
@@ -949,11 +920,10 @@ export const removeEvidence = tool({
   description: "Removes evidence.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     evidenceId: tool.schema.string().describe("Evidence ID"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
   },
-  async execute({ id, gitRepo, evidenceId, subtaskId }) {
+  async execute({ id, evidenceId, subtaskId }) {
     await fetchApiWithRetry(`/evidence/${evidenceId}`, { method: "DELETE" });
     return `Evidence ${evidenceId} removed.`;
   },
@@ -963,20 +933,32 @@ export const getEvidence = tool({
   description: "Gets evidence for a ticket.",
   args: {
     id: tool.schema.string().describe("Ticket ID"),
-    gitRepo: tool.schema.string().describe("Git repository name"),
     subtaskId: tool.schema.string().optional().describe("Subtask ID"),
     evidenceId: tool.schema
       .string()
       .optional()
       .describe("Specific evidence ID"),
+    source: tool.schema
+      .string()
+      .optional()
+      .describe("Filter by source: validation, implementation, review, qa, security, pr_maintenance"),
+    passed: tool.schema
+      .boolean()
+      .optional()
+      .describe("Filter by pass/fail (only for validation source)"),
     maxChars: tool.schema.number().optional().describe("Max chars to read"),
   },
-  async execute({ id, gitRepo, subtaskId, evidenceId, maxChars }) {
+  async execute({ id, subtaskId, evidenceId, source, passed, maxChars }) {
     const ticketId = subtaskId || id;
     if (evidenceId) {
       return fetchApiWithRetry(`/evidence/${evidenceId}`);
     }
-    return fetchApiWithRetry(`/tickets/${ticketId}/evidence`);
+    const params = new URLSearchParams();
+    if (source) params.set('source', source);
+    if (passed !== undefined) params.set('passed', String(passed));
+    if (maxChars) params.set('maxChars', String(maxChars));
+    const query = params.toString();
+    return fetchApiWithRetry(`/tickets/${ticketId}/evidence${query ? `?${query}` : ''}`);
   },
 });
 

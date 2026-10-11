@@ -3,7 +3,7 @@ import { join } from 'path';
 
 import { Request, Response, Router } from 'express';
 import multer from 'multer';
-import { eq, desc, count } from 'drizzle-orm';
+import { eq, desc, count, and } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '../db/index.js';
@@ -41,6 +41,7 @@ const CreateEvidenceSchema = z.object({
   source: z.string().min(1),
   type: z.string().min(1),
   content: z.string().optional(), // base64 encoded content for JSON
+  passed: z.boolean().optional(),
 }).refine(data => data.filePath || data.content, {
   message: "Either filePath or content is required",
   path: ["filePath"],
@@ -68,6 +69,8 @@ router.get('/:id/evidence', async (req: Request, res: Response) => {
   
   let limit: number = 50;
   let offset: number = 0;
+  let source: string | undefined;
+  let passed: boolean | undefined;
   
   if (isRecord(query)) {
     if (Object.prototype.hasOwnProperty.call(query, 'limit')) {
@@ -88,20 +91,37 @@ router.get('/:id/evidence', async (req: Request, res: Response) => {
         offset = typeof val === 'string' ? parseInt(val, 10) || 0 : 0;
       }
     }
+    if (Object.prototype.hasOwnProperty.call(query, 'source')) {
+      const val = query['source'];
+      const str = Array.isArray(val) ? val[0] : val;
+      source = typeof str === 'string' ? str : undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(query, 'passed')) {
+      const val = query['passed'];
+      const str = Array.isArray(val) ? val[0] : val;
+      if (typeof str === 'string') {
+        if (str === 'true') passed = true;
+        else if (str === 'false') passed = false;
+      }
+    }
   }
   
   limit = Math.min(limit, 200);
   
+  const conditions = [eq(evidence.ticketId, ticketId)];
+  if (source) conditions.push(eq(evidence.source, source));
+  if (passed !== undefined) conditions.push(eq(evidence.passed, passed));
+  
   const totalResult = await db
     .select({ count: count() })
     .from(evidence)
-    .where(eq(evidence.ticketId, ticketId));
+    .where(and(...conditions));
   const total = Number(totalResult[0]?.count || 0);
   
   const results = await db
     .select()
     .from(evidence)
-    .where(eq(evidence.ticketId, ticketId))
+    .where(and(...conditions))
     .orderBy(desc(evidence.createdAt))
     .limit(limit)
     .offset(offset);
@@ -168,6 +188,7 @@ router.post('/:id/evidence', upload.single('file'), async (req: MulterRequest, r
     contentType: evidenceData.contentType,
     source: evidenceData.source,
     type: evidenceData.type,
+    passed: evidenceData.passed,
     createdAt: now,
   });
   

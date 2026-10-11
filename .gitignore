@@ -48,3 +48,4 @@ coverage/
 
 # Vitest
 vitest.config.ts.timestamp-*
+.playwright-mcp

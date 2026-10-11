@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRD Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "marked": "https://esm.sh/marked@12.0.0"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="header">
+    <h1>PRD Dashboard</h1>
+    <div class="header-controls">
+      <select id="repo-select" class="select">
+        <option value="">All Repos</option>
+      </select>
+      <span id="connection-status" class="status disconnected">Disconnected</span>
+    </div>
+  </header>
+  
+  <nav class="tabs">
+    <button class="tab active" data-view="overview">Overview</button>
+    <button class="tab" data-view="kanban">Kanban</button>
+    <button class="tab" data-view="flagged">Flagged</button>
+  </nav>
+  
+  <main class="main">
+    <section id="view-overview" class="view active">
+      <div id="repo-grid" class="repo-grid"></div>
+    </section>
+    
+    <section id="view-kanban" class="view">
+      <div id="kanban-board" class="kanban-board"></div>
+    </section>
+    
+    <section id="view-flagged" class="view">
+      <div id="flagged-list" class="flagged-list"></div>
+    </section>
+  </main>
+  
+  <!-- Detail Modal (centered, slides up from bottom) -->
+  <dialog id="detail-modal" class="detail-modal">
+    <div class="detail-header">
+      <h2 id="detail-title">Ticket Details</h2>
+      <button id="detail-close" class="btn-close">&times;</button>
+    </div>
+    <div class="detail-tabs">
+      <button class="detail-tab active" data-tab="overview">Overview</button>
+      <button class="detail-tab" data-tab="plan">Plan</button>
+      <button class="detail-tab" data-tab="evidence">Evidence</button>
+      <button class="detail-tab" data-tab="suggestions">Suggestions</button>
+      <button class="detail-tab" data-tab="deviations">Deviations</button>
+      <button class="detail-tab" data-tab="subtasks">Subtasks</button>
+      <button class="detail-tab" data-tab="validation">Validation</button>
+    </div>
+    <div id="detail-content" class="detail-content">
+      <div id="detail-overview" class="detail-section active"></div>
+      <div id="detail-plan" class="detail-section"></div>
+      <div id="detail-evidence" class="detail-section"></div>
+      <div id="detail-suggestions" class="detail-section"></div>
+      <div id="detail-deviations" class="detail-section"></div>
+      <div id="detail-subtasks" class="detail-section"></div>
+      <div id="detail-validation" class="detail-section"></div>
+    </div>
+  </dialog>
+  
+  <!-- Unblock Modal -->
+  <dialog id="unblock-modal" class="modal">
+    <form method="dialog">
+      <h3>Unblock Ticket</h3>
+      <p id="unblock-message"></p>
+      <div class="modal-actions">
+        <button value="back" class="btn btn-primary">Move Back</button>
+        <button value="forward" class="btn btn-primary">Move Forward</button>
+        <button value="cancel" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+  
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@ export default defineConfig({
   out: './src/db/migrations',
   dialect: 'sqlite',
   dbCredentials: {
-    url: process.env.PRD_DB_PATH || './prd.db'
+    url: process.env.PRD_DB_URL || 'file:./prd.db'
   },
   verbose: true,
   strict: true

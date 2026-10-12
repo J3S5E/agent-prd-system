@@ -6,9 +6,9 @@ import { tickets } from '../db/schema.js';
 import { TicketStatus } from '../types/ticket.js';
 import * as schema from '../db/schema.js';
 
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 
-type Database = BetterSQLite3Database<typeof schema>;
+type Database = LibSQLDatabase<typeof schema>;
 
 export interface CircuitBreakerState {
   validationAttempts: number;

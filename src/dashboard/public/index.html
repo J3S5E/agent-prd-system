@@ -96,6 +96,36 @@
       </div>
     </form>
   </dialog>
+
+  <!-- Validation Config Modal (centered, slides up like detail-modal) -->
+  <dialog id="validation-config-modal" class="detail-modal validation-config-modal">
+    <form method="dialog">
+      <div class="detail-header">
+        <h2 id="validation-config-modal-title">Configure Validation</h2>
+        <button id="validation-config-close" class="btn-close" value="cancel">&times;</button>
+      </div>
+      <div class="validation-config-content">
+        <div class="validation-config-info">
+          <p>Define validation checks for this repository. Each check runs a command and reports pass/fail.</p>
+        </div>
+        <div class="validation-config-example">
+          <details>
+            <summary>Show example config</summary>
+            <pre id="validation-config-example-json"></pre>
+          </details>
+        </div>
+        <div class="validation-config-editor">
+          <label for="validation-config-json">Validation Config (JSON)</label>
+          <textarea id="validation-config-json" class="json-editor" spellcheck="false" placeholder="Enter validation config as JSON..."></textarea>
+          <div id="validation-config-error" class="validation-error hidden"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button value="cancel" class="btn btn-secondary">Cancel</button>
+        <button value="save" class="btn btn-primary" id="validation-config-save">Save</button>
+      </div>
+    </form>
+  </dialog>
   
   <script type="module" src="/app.js"></script>
 </body>

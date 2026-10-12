@@ -17,6 +17,7 @@ import type {
   ExtendedWebSocketMessage,
   BaseTicket,
 } from "./types.js";
+import type { ValidationConfig, ValidationCheck } from "./types.js";
 
 const API_BASE = "/api/v1";
 const WS_URL = `ws://${window.location.host}/ws`;
@@ -81,6 +82,31 @@ const evidenceModalContent = document.getElementById(
   "evidence-modal-content",
 ) as HTMLDivElement;
 
+// Validation Config Modal
+const validationConfigModal = document.getElementById(
+  "validation-config-modal",
+) as HTMLDialogElement;
+const validationConfigClose = document.getElementById(
+  "validation-config-close",
+) as HTMLButtonElement;
+const validationConfigModalTitle = document.getElementById(
+  "validation-config-modal-title",
+) as HTMLHeadingElement;
+const validationConfigJson = document.getElementById(
+  "validation-config-json",
+) as HTMLTextAreaElement;
+const validationConfigError = document.getElementById(
+  "validation-config-error",
+) as HTMLDivElement;
+const validationConfigSave = document.getElementById(
+  "validation-config-save",
+) as HTMLButtonElement;
+const validationConfigExampleJson = document.getElementById(
+  "validation-config-example-json",
+) as HTMLPreElement;
+
+let currentRepoForConfig: string | null = null;
+
 // Initialize
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
@@ -139,6 +165,30 @@ function setupEventListeners(): void {
         if (subtask) openDetailPanel(subtask);
       }
     }
+  });
+
+  // Validation Config Modal
+  validationConfigClose.addEventListener("click", () =>
+    validationConfigModal.close(),
+  );
+  validationConfigSave.addEventListener("click", () => {
+    validationConfigModal.close("save");
+  });
+  validationConfigModal.addEventListener("close", () => {
+    const direction = validationConfigModal.returnValue;
+    if (direction === "save") {
+      saveValidationConfig();
+    }
+  });
+
+  // Click outside validation config modal to close (backdrop click)
+  validationConfigModal.addEventListener("click", (e) => {
+    if (e.target === validationConfigModal) validationConfigModal.close();
+  });
+
+  // Real-time JSON validation
+  validationConfigJson.addEventListener("input", () => {
+    validateValidationConfigJson();
   });
 }
 
@@ -406,6 +456,193 @@ async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+// Validation Config helpers
+function getValidationConfigExample(): ValidationConfig {
+  return {
+    worktreeBase: ".",
+    checks: [
+      {
+        name: "lint",
+        cmd: "npm run lint",
+        timeoutMs: 60000,
+      },
+      {
+        name: "typecheck",
+        cmd: "npm run typecheck",
+        timeoutMs: 120000,
+      },
+      {
+        name: "test",
+        cmd: "npm test",
+        timeoutMs: 300000,
+      },
+    ],
+    maxConcurrent: 1,
+  };
+}
+
+function validateValidationConfigJson(): boolean {
+  const jsonText = validationConfigJson.value.trim();
+  if (!jsonText) {
+    showValidationConfigError("Config cannot be empty");
+    return false;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch (err) {
+    showValidationConfigError(`Invalid JSON: ${(err as Error).message}`);
+    return false;
+  }
+
+  // Validate against schema
+  const validation = validateValidationConfig(parsed);
+  if (!validation.valid) {
+    showValidationConfigError(validation.error!);
+    return false;
+  }
+
+  hideValidationConfigError();
+  return true;
+}
+
+function validateValidationConfig(data: unknown): { valid: boolean; error?: string } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, error: "Config must be an object" };
+  }
+
+  const obj = data as Record<string, unknown>;
+
+  // Check worktreeBase
+  if (obj.worktreeBase !== undefined && typeof obj.worktreeBase !== "string") {
+    return { valid: false, error: "worktreeBase must be a string" };
+  }
+
+  // Check checks array
+  if (!obj.checks || !Array.isArray(obj.checks)) {
+    return { valid: false, error: "checks must be an array" };
+  }
+
+  if (obj.checks.length === 0) {
+    return { valid: false, error: "checks array must have at least one check" };
+  }
+
+  for (let i = 0; i < obj.checks.length; i++) {
+    const check = obj.checks[i];
+    if (!check || typeof check !== "object") {
+      return { valid: false, error: `checks[${i}] must be an object` };
+    }
+
+    const checkObj = check as Record<string, unknown>;
+
+    if (!checkObj.name || typeof checkObj.name !== "string" || checkObj.name.trim() === "") {
+      return { valid: false, error: `checks[${i}].name is required and must be a non-empty string` };
+    }
+
+    if (!checkObj.cmd || typeof checkObj.cmd !== "string" || checkObj.cmd.trim() === "") {
+      return { valid: false, error: `checks[${i}].cmd is required and must be a non-empty string` };
+    }
+
+    if (checkObj.timeoutMs !== undefined) {
+      if (typeof checkObj.timeoutMs !== "number" || !Number.isInteger(checkObj.timeoutMs) || checkObj.timeoutMs <= 0) {
+        return { valid: false, error: `checks[${i}].timeoutMs must be a positive integer` };
+      }
+    }
+
+    if (checkObj.env !== undefined) {
+      if (typeof checkObj.env !== "object" || checkObj.env === null || Array.isArray(checkObj.env)) {
+        return { valid: false, error: `checks[${i}].env must be an object` };
+      }
+      for (const [key, value] of Object.entries(checkObj.env)) {
+        if (typeof value !== "string") {
+          return { valid: false, error: `checks[${i}].env.${key} must be a string` };
+        }
+      }
+    }
+  }
+
+  // Check maxConcurrent
+  if (obj.maxConcurrent !== undefined) {
+    if (typeof obj.maxConcurrent !== "number" || !Number.isInteger(obj.maxConcurrent) || obj.maxConcurrent <= 0) {
+      return { valid: false, error: "maxConcurrent must be a positive integer" };
+    }
+  }
+
+  return { valid: true };
+}
+
+function showValidationConfigError(message: string): void {
+  validationConfigError.textContent = message;
+  validationConfigError.classList.remove("hidden");
+  validationConfigSave.disabled = true;
+}
+
+function hideValidationConfigError(): void {
+  validationConfigError.classList.add("hidden");
+  validationConfigSave.disabled = false;
+}
+
+function openValidationConfigModal(repoName: string): void {
+  currentRepoForConfig = repoName;
+  validationConfigModalTitle.textContent = `Configure Validation: ${repoName}`;
+  
+  // Set example config
+  const example = getValidationConfigExample();
+  validationConfigExampleJson.textContent = JSON.stringify(example, null, 2);
+
+  // Fetch existing config
+  fetchValidationConfig(repoName);
+
+  validationConfigModal.showModal();
+  validationConfigJson.focus();
+}
+
+async function fetchValidationConfig(repoName: string): Promise<void> {
+  try {
+    const repo = await apiGet<Repo>(`/repos/${encodeURIComponent(repoName)}`);
+    if (repo.validationConfig) {
+      try {
+        const parsed = JSON.parse(repo.validationConfig) as ValidationConfig;
+        validationConfigJson.value = JSON.stringify(parsed, null, 2);
+      } catch {
+        validationConfigJson.value = JSON.stringify(getValidationConfigExample(), null, 2);
+      }
+    } else {
+      validationConfigJson.value = JSON.stringify(getValidationConfigExample(), null, 2);
+    }
+    validateValidationConfigJson();
+  } catch (err) {
+    console.error("Failed to fetch validation config:", err);
+    validationConfigJson.value = JSON.stringify(getValidationConfigExample(), null, 2);
+    validateValidationConfigJson();
+  }
+}
+
+async function saveValidationConfig(): Promise<void> {
+  if (!currentRepoForConfig) return;
+
+  if (!validateValidationConfigJson()) {
+    return;
+  }
+
+  const config = JSON.parse(validationConfigJson.value) as ValidationConfig;
+
+  try {
+    await apiPatch<Repo>(`/repos/${encodeURIComponent(currentRepoForConfig)}`, {
+      validationConfig: config,
+    });
+    validationConfigModal.close();
+    // Refresh overview to show updated badge
+    if (state.currentView === "overview") {
+      loadOverview();
+    }
+  } catch (err) {
+    console.error("Failed to save validation config:", err);
+    showValidationConfigError(`Failed to save: ${(err as Error).message}`);
+  }
+}
+
 // Loaders
 async function loadRalphInstances(): Promise<void> {
   try {
@@ -539,11 +776,25 @@ function renderOverview(tickets: Ticket[]): void {
   for (const [repoName, data] of reposMap) {
     const card = document.createElement("div");
     card.className = "repo-card";
-    card.onclick = () => {
+    card.onclick = (e: MouseEvent) => {
+      // Don't navigate if clicking on the configure button
+      if ((e.target as HTMLElement).closest(".repo-card-actions")) return;
       state.currentRepo = repoName;
       repoSelect.value = repoName;
       switchView("kanban");
     };
+
+    // Find repo config from state.repos
+    const repoConfig = state.repos.find((r) => r.name === repoName);
+    let hasValidationChecks = false;
+    if (repoConfig?.validationConfig) {
+      try {
+        const config = JSON.parse(repoConfig.validationConfig) as ValidationConfig;
+        hasValidationChecks = config.checks && config.checks.length > 0;
+      } catch {
+        hasValidationChecks = false;
+      }
+    }
 
     const statusBadges = Object.entries(data.statusCounts)
       .sort((a, b) => b[1] - a[1])
@@ -562,9 +813,30 @@ function renderOverview(tickets: Ticket[]): void {
       </div>
       <div class="repo-card-stats">${statusBadges}</div>
       <div class="repo-card-stats">Total tickets: ${data.tickets.length}</div>
+      ${!hasValidationChecks ? `<div class="repo-card-stats"><span class="no-validation-badge">No validation checks</span></div>` : ""}
+      <div class="repo-card-actions">
+        <button class="btn btn-secondary">Configure</button>
+      </div>
     `;
 
     repoGrid.appendChild(card);
+  }
+
+  // Event delegation for Configure buttons
+  repoGrid.removeEventListener("click", handleRepoGridClick);
+  repoGrid.addEventListener("click", handleRepoGridClick);
+}
+
+function handleRepoGridClick(e: MouseEvent): void {
+  const configureBtn = (e.target as HTMLElement).closest(".repo-card-actions button");
+  if (configureBtn) {
+    e.stopPropagation();
+    const repoCard = configureBtn.closest(".repo-card");
+    const repoName = repoCard?.querySelector("h3")?.textContent;
+    if (repoName) {
+      openValidationConfigModal(repoName);
+    }
+    return;
   }
 }
 

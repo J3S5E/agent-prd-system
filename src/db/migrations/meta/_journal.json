@@ -15,6 +15,13 @@
       "when": 1791712974085,
       "tag": "0001_giant_nightcrawler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791797646928,
+      "tag": "0002_true_gamma_corps",
+      "breakpoints": true
     }
   ]
 }

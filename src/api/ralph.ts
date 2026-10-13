@@ -75,7 +75,7 @@ const AcquireLockSchema = z.object({
   instanceId: z.string().uuid(),
   ticketId: z.string().uuid(),
   lockType: z.enum(['validation', 'processing']),
-  ttlMs: z.number().int().positive().optional().default(300000), // 5 min default
+  ttlMs: z.number().int().positive().optional().default(1860000), // 31 min default
 });
 
 router.post('/lock/acquire', async (req: Request, res: Response) => {

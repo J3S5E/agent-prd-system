@@ -12,7 +12,7 @@ const POLL_INTERVAL_MS = 5000;
 const HEARTBEAT_INTERVAL_MS = 15000;
 const COOLDOWN_BASE_MS = 1000;
 const MAX_COOLDOWN_MS = 60000;
-const LOCK_TTL_MS = 300000;
+const LOCK_TTL_MS = 3460000;
 const MAX_OUTPUT_SIZE = 10 * 1024 * 1024;
 
 let currentChild = null;
@@ -71,8 +71,8 @@ function runAndCapture(cmd, envVars = {}) {
 
     const timeout = setTimeout(() => {
       killProcessTree(child);
-      resolve({ code: null, output: "TIMED OUT after 300s" });
-    }, 300000);
+      resolve({ code: null, output: "TIMED OUT" });
+    }, LOCK_TTL_MS);
 
     child.on("close", (code) => {
       clearTimeout(timeout);
@@ -398,8 +398,8 @@ function runAsync(cmd, envVars = {}) {
 
     const timeout = setTimeout(() => {
       killProcessTree(child);
-      reject(new Error("TIMED OUT after 300s"));
-    }, 300000);
+      reject(new Error("TIMED OUT after 30min"));
+    }, 1800000);
 
     child.on("close", (code) => {
       clearTimeout(timeout);

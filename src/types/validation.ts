@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const ValidationCheckSchema = z.object({
   name: z.string().min(1),
   cmd: z.string().min(1),
-  timeoutMs: z.number().int().positive().optional().default(300000),
+  timeoutMs: z.number().int().positive().optional().default(1860000),
   env: z.record(z.string()).optional(),
 });
 

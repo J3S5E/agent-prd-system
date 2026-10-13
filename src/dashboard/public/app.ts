@@ -345,7 +345,7 @@ function handleWebSocketMessage(message: WebSocketMessage): void {
         instanceId,
         instanceName: instance?.name || instanceId.slice(0, 8),
         lockType: lockType as "validation" | "processing",
-        expiresAt: timestamp + 300000,
+        expiresAt: timestamp + 1860000,
       });
       refreshViews();
       break;
@@ -474,7 +474,7 @@ function getValidationConfigExample(): ValidationConfig {
       {
         name: "test",
         cmd: "npm test",
-        timeoutMs: 300000,
+        timeoutMs: 1860000,
       },
     ],
     maxConcurrent: 1,
